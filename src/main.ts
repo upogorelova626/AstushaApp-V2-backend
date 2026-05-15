@@ -1,11 +1,19 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.use(cookieParser());
+
+  app.enableCors({
+    origin: 'http://localhost:4200',
+    credentials: true,
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -19,7 +27,8 @@ async function bootstrap() {
     .setTitle('AstushaApp API')
     .setDescription('Backend API documentation for AstushaApp')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addCookieAuth('accessToken')
+    .addCookieAuth('refreshToken')
     .addTag('auth')
     .addTag('users')
     .addTag('projects')

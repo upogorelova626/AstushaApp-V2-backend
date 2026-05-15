@@ -7,12 +7,17 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
+import type { Response } from 'express';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import {
+  ACCESS_TOKEN_COOKIE_NAME,
+  REFRESH_TOKEN_COOKIE_NAME,
+} from './constants/auth-cookie.const';
 import { LoginDto } from './login.dto';
-import { RefreshTokenDto } from './refresh-token.dto';
 import { RegisterDto } from './register.dto';
+import type { CookieRequest } from './types/cookie-request.type';
 
 @Injectable()
 export class AuthService {
@@ -23,7 +28,7 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, response: Response) {
     const existingUserByEmail = await this.usersService.findByEmail(dto.email);
 
     if (existingUserByEmail) {
@@ -48,17 +53,14 @@ export class AuthService {
       passwordHash,
     });
 
-    const accessToken = this.signAccessToken(user.id, user.email);
-    const refreshToken = await this.createRefreshToken(user.id);
+    await this.setAuthCookies(response, user.id, user.email);
 
     return {
-      accessToken,
-      refreshToken,
       user,
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, response: Response) {
     const user = await this.usersService.findByEmail(dto.email);
 
     if (!user) {
@@ -74,18 +76,21 @@ export class AuthService {
       throw new UnauthorizedException('Неверный email или пароль');
     }
 
-    const accessToken = this.signAccessToken(user.id, user.email);
-    const refreshToken = await this.createRefreshToken(user.id);
+    await this.setAuthCookies(response, user.id, user.email);
 
     return {
-      accessToken,
-      refreshToken,
       user: this.buildUserResponse(user),
     };
   }
 
-  async refresh(dto: RefreshTokenDto) {
-    const tokenHash = this.hashToken(dto.refreshToken);
+  async refresh(request: CookieRequest, response: Response) {
+    const refreshToken = this.getCookie(request, REFRESH_TOKEN_COOKIE_NAME);
+
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token отсутствует');
+    }
+
+    const tokenHash = this.hashToken(refreshToken);
 
     const storedToken = await this.prisma.refreshToken.findUnique({
       where: {
@@ -113,42 +118,42 @@ export class AuthService {
       },
     });
 
-    const accessToken = this.signAccessToken(
+    await this.setAuthCookies(
+      response,
       storedToken.user.id,
       storedToken.user.email,
     );
-    const refreshToken = await this.createRefreshToken(storedToken.user.id);
 
     return {
-      accessToken,
-      refreshToken,
       user: this.buildUserResponse(storedToken.user),
     };
   }
 
-  async logout(dto: RefreshTokenDto) {
-    const tokenHash = this.hashToken(dto.refreshToken);
+  async logout(request: CookieRequest, response: Response) {
+    const refreshToken = this.getCookie(request, REFRESH_TOKEN_COOKIE_NAME);
 
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: {
-        tokenHash,
-      },
-    });
+    if (refreshToken) {
+      const tokenHash = this.hashToken(refreshToken);
 
-    if (!storedToken || storedToken.revokedAt) {
-      return {
-        success: true,
-      };
+      const storedToken = await this.prisma.refreshToken.findUnique({
+        where: {
+          tokenHash,
+        },
+      });
+
+      if (storedToken && !storedToken.revokedAt) {
+        await this.prisma.refreshToken.update({
+          where: {
+            id: storedToken.id,
+          },
+          data: {
+            revokedAt: new Date(),
+          },
+        });
+      }
     }
 
-    await this.prisma.refreshToken.update({
-      where: {
-        id: storedToken.id,
-      },
-      data: {
-        revokedAt: new Date(),
-      },
-    });
+    this.clearAuthCookies(response);
 
     return {
       success: true,
@@ -157,6 +162,54 @@ export class AuthService {
 
   me(userId: string) {
     return this.usersService.findById(userId);
+  }
+
+  private getCookie(
+    request: CookieRequest,
+    cookieName: string,
+  ): string | undefined {
+    return request.cookies[cookieName];
+  }
+
+  private async setAuthCookies(
+    response: Response,
+    userId: string,
+    email: string,
+  ) {
+    const accessToken = this.signAccessToken(userId, email);
+    const refreshToken = await this.createRefreshToken(userId);
+
+    response.cookie(ACCESS_TOKEN_COOKIE_NAME, accessToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: this.getAccessTokenExpiresInMs(),
+    });
+
+    response.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: this.getRefreshTokenExpiresInMs(),
+    });
+  }
+
+  private clearAuthCookies(response: Response) {
+    response.clearCookie(ACCESS_TOKEN_COOKIE_NAME, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+    });
+
+    response.clearCookie(REFRESH_TOKEN_COOKIE_NAME, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      path: '/',
+    });
   }
 
   private signAccessToken(userId: string, email: string) {
@@ -174,7 +227,7 @@ export class AuthService {
       data: {
         userId,
         tokenHash,
-        expiresAt: this.getRefreshTokenExpiresAt(),
+        expiresAt: new Date(Date.now() + this.getRefreshTokenExpiresInMs()),
       },
     });
 
@@ -185,14 +238,16 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private getRefreshTokenExpiresAt() {
+  private getAccessTokenExpiresInMs() {
+    return 60 * 60 * 1000;
+  }
+
+  private getRefreshTokenExpiresInMs() {
     const refreshTokenExpiresInDays = Number(
       this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN_DAYS') ?? 7,
     );
 
-    return new Date(
-      Date.now() + refreshTokenExpiresInDays * 24 * 60 * 60 * 1000,
-    );
+    return refreshTokenExpiresInDays * 24 * 60 * 60 * 1000;
   }
 
   private buildUserResponse(user: {

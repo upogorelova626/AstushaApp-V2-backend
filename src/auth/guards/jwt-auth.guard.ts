@@ -5,10 +5,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Request } from 'express';
 
+import { ACCESS_TOKEN_COOKIE_NAME } from '../constants/auth-cookie.const';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
-import { AuthRequest } from '../types/auth-request.type';
+import type { AuthRequest } from '../types/auth-request.type';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -16,29 +16,24 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthRequest>();
-    const token = this.extractTokenFromHeader(request);
+    const accessToken = request.cookies[ACCESS_TOKEN_COOKIE_NAME];
 
-    if (!token) {
+    if (!accessToken) {
       throw new UnauthorizedException('Пользователь не авторизован');
     }
 
     try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
+      const payload =
+        await this.jwtService.verifyAsync<JwtPayload>(accessToken);
 
       request.user = {
         id: payload.sub,
         email: payload.email,
       };
+
+      return true;
     } catch {
       throw new UnauthorizedException('Недействительный токен');
     }
-
-    return true;
-  }
-
-  private extractTokenFromHeader(request: Request): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-
-    return type === 'Bearer' ? token : undefined;
   }
 }
