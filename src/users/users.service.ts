@@ -29,6 +29,45 @@ export class UsersService {
     });
   }
 
+  async lookupUser(currentUserId: string, identifier: string) {
+    const normalizedIdentifier = identifier.trim();
+
+    if (!normalizedIdentifier) {
+      return null;
+    }
+
+    return this.prisma.user.findFirst({
+      where: {
+        id: {
+          not: currentUserId,
+        },
+        OR: [
+          {
+            email: {
+              equals: normalizedIdentifier,
+              mode: 'insensitive',
+            },
+          },
+          {
+            login: {
+              equals: normalizedIdentifier,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      },
+      select: {
+        id: true,
+        login: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        position: true,
+      },
+    });
+  }
+
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: {

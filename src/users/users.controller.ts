@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Patch,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -18,6 +19,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthRequest } from '../auth/types/auth-request.type';
 import { ChangePasswordDto } from './change-password.dto';
+import { LookupUserDto } from './lookup-user.dto';
 import { UpdateProfileDto } from './update-profile.dto';
 import { UsersService } from './users.service';
 
@@ -32,6 +34,12 @@ export class UsersController {
   @Get('profile')
   getProfile(@Req() request: AuthRequest) {
     return this.usersService.findById(request.user.id);
+  }
+
+  @ApiOperation({ summary: 'Найти пользователя по email или login' })
+  @Get('lookup')
+  lookupUser(@Req() request: AuthRequest, @Query() query: LookupUserDto) {
+    return this.usersService.lookupUser(request.user.id, query.identifier);
   }
 
   @ApiOperation({ summary: 'Обновить свой профиль' })

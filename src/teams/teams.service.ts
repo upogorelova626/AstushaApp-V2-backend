@@ -13,7 +13,7 @@ export class TeamsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createTeam(userId: string, dto: CreateTeamDto) {
-    return this.prisma.team.create({
+    const team = await this.prisma.team.create({
       data: {
         name: dto.name,
         description: dto.description,
@@ -27,6 +27,8 @@ export class TeamsService {
       },
       select: this.teamSelect(userId),
     });
+
+    return this.mapTeamResponse(team);
   }
 
   async getMyTeams(userId: string) {
