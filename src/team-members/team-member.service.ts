@@ -28,12 +28,76 @@ export class TeamMembersService {
     });
   }
 
+  async lookupTeamMemberCandidate(
+    currentUserId: string,
+    teamId: string,
+    identifier: string,
+  ) {
+    await this.checkCanManageTeamMembers(currentUserId, teamId);
+
+    const normalizedIdentifier = identifier.trim();
+
+    if (!normalizedIdentifier) {
+      throw new BadRequestException('Укажите email или логин пользователя');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          {
+            email: {
+              equals: normalizedIdentifier,
+              mode: 'insensitive',
+            },
+          },
+          {
+            login: {
+              equals: normalizedIdentifier,
+              mode: 'insensitive',
+            },
+          },
+        ],
+      },
+      select: this.userLookupSelect(),
+    });
+
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    if (user.id === currentUserId) {
+      throw new BadRequestException('Нельзя добавить себя в команду');
+    }
+
+    const existingMember = await this.prisma.teamMember.findUnique({
+      where: {
+        teamId_userId: {
+          teamId,
+          userId: user.id,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingMember) {
+      throw new ConflictException('Пользователь уже состоит в команде');
+    }
+
+    return user;
+  }
+
   async addTeamMember(
     currentUserId: string,
     teamId: string,
     dto: AddTeamMemberDto,
   ) {
     await this.checkCanManageTeamMembers(currentUserId, teamId);
+
+    if (dto.userId === currentUserId) {
+      throw new BadRequestException('Нельзя добавить себя в команду');
+    }
 
     const user = await this.prisma.user.findUnique({
       where: {
@@ -85,7 +149,7 @@ export class TeamMembersService {
     const member = await this.getTeamMemberByIdOrThrow(teamId, memberId);
 
     if (member.role === 'OWNER') {
-      throw new BadRequestException('Нельзя изменить роль владельца команды');
+      throw new BadRequestException('Нельзя изменить роль создателя команды');
     }
 
     return this.prisma.teamMember.update({
@@ -109,7 +173,7 @@ export class TeamMembersService {
     const member = await this.getTeamMemberByIdOrThrow(teamId, memberId);
 
     if (member.role === 'OWNER') {
-      throw new BadRequestException('Нельзя удалить владельца команды');
+      throw new BadRequestException('Нельзя удалить создателя команды');
     }
 
     await this.prisma.teamMember.delete({
@@ -184,6 +248,18 @@ export class TeamMembersService {
     return member;
   }
 
+  private userLookupSelect() {
+    return {
+      id: true,
+      login: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      avatarUrl: true,
+      position: true,
+    };
+  }
+
   private teamMemberSelect() {
     return {
       id: true,
@@ -191,15 +267,7 @@ export class TeamMembersService {
       createdAt: true,
       updatedAt: true,
       user: {
-        select: {
-          id: true,
-          login: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          avatarUrl: true,
-          position: true,
-        },
+        select: this.userLookupSelect(),
       },
     };
   }

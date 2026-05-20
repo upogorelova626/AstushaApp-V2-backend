@@ -1,9 +1,14 @@
-import { IsIn, IsUUID } from 'class-validator';
+import { IsIn, IsString } from 'class-validator';
+import { TeamRole } from 'src/generated/prisma/enums';
+
+export const ADDABLE_TEAM_ROLES = [TeamRole.ADMIN, TeamRole.MEMBER] as const;
+
+export type AddableTeamRole = (typeof ADDABLE_TEAM_ROLES)[number];
 
 export class AddTeamMemberDto {
-  @IsUUID()
+  @IsString()
   userId!: string;
 
-  @IsIn(['ADMIN', 'MEMBER'])
-  role!: 'ADMIN' | 'MEMBER';
+  @IsIn(ADDABLE_TEAM_ROLES)
+  role!: AddableTeamRole;
 }

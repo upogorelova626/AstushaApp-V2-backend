@@ -6,14 +6,21 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiCookieAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthRequest } from '../auth/types/auth-request.type';
 import { AddTeamMemberDto } from './add-team-member.dto';
+import { LookupTeamMemberCandidateQueryDto } from './lookup-team-member-candidate-query.dto';
 import { TeamMembersService } from './team-member.service';
 import { UpdateTeamMemberDto } from './update-team-member.dto';
 
@@ -23,6 +30,27 @@ import { UpdateTeamMemberDto } from './update-team-member.dto';
 @Controller('teams/:teamId/members')
 export class TeamMembersController {
   constructor(private readonly teamMembersService: TeamMembersService) {}
+
+  @ApiOperation({
+    summary: 'Найти пользователя для добавления в команду',
+  })
+  @ApiQuery({
+    name: 'identifier',
+    description: 'Email или логин пользователя',
+    example: 'astusha@example.com',
+  })
+  @Get('lookup')
+  lookupTeamMemberCandidate(
+    @Req() request: AuthRequest,
+    @Param('teamId') teamId: string,
+    @Query() query: LookupTeamMemberCandidateQueryDto,
+  ) {
+    return this.teamMembersService.lookupTeamMemberCandidate(
+      request.user.id,
+      teamId,
+      query.identifier,
+    );
+  }
 
   @ApiOperation({ summary: 'Получить участников команды' })
   @Get()
