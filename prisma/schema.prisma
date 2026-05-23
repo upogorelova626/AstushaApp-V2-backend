@@ -24,6 +24,7 @@ enum ProjectWorkflowType {
   DEVELOPMENT
   DESIGN
   SIMPLE
+  CUSTOM
 }
 
 enum ProjectStatus {
@@ -31,6 +32,13 @@ enum ProjectStatus {
   PAUSED
   COMPLETED
   ARCHIVED
+}
+
+enum ProjectPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
 }
 
 enum TaskType {
@@ -80,6 +88,8 @@ model User {
   taskComments    TaskComment[]
   taskAttachments TaskAttachment[]
 
+  taskWorkflowMoves TaskWorkflowHistory[] @relation("TaskWorkflowHistoryMovedBy")
+
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
 
@@ -127,8 +137,13 @@ model Project {
   key         String  @unique
   description String?
 
-  status   ProjectStatus @default(ACTIVE)
-  deadline DateTime?
+  status   ProjectStatus   @default(ACTIVE)
+  priority ProjectPriority @default(MEDIUM)
+
+  startDate   DateTime?
+  deadline    DateTime?
+  completedAt DateTime?
+  archivedAt  DateTime?
 
   workflowType ProjectWorkflowType @default(SIMPLE)
 
@@ -146,6 +161,8 @@ model Project {
   sprints Sprint[]
 
   @@index([creatorId])
+  @@index([status])
+  @@index([deadline])
   @@map("projects")
 }
 
@@ -185,6 +202,9 @@ model ProjectWorkflowStage {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   tasks Task[]
+
+  movedFromHistories TaskWorkflowHistory[] @relation("TaskMovedFromStage")
+  movedToHistories   TaskWorkflowHistory[] @relation("TaskMovedToStage")
 
   @@unique([projectId, name])
   @@unique([projectId, position])
@@ -275,7 +295,8 @@ model Task {
   sprintId        String?
   workflowStageId String
 
-  number Int
+  number   Int
+  position Int @default(0)
 
   title       String
   description String?
@@ -307,13 +328,45 @@ model Task {
   comments    TaskComment[]
   attachments TaskAttachment[]
 
+  workflowHistory TaskWorkflowHistory[]
+
   @@unique([projectId, number])
   @@index([projectId])
   @@index([sprintId])
   @@index([workflowStageId])
+  @@index([workflowStageId, position])
   @@index([assigneeId])
   @@index([createdById])
   @@map("tasks")
+}
+
+model TaskWorkflowHistory {
+  id String @id @default(uuid())
+
+  taskId String
+
+  fromStageId String?
+  toStageId   String
+
+  movedById String?
+
+  previousPosition Int?
+  newPosition      Int?
+
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  fromStage ProjectWorkflowStage? @relation("TaskMovedFromStage", fields: [fromStageId], references: [id], onDelete: SetNull)
+  toStage   ProjectWorkflowStage  @relation("TaskMovedToStage", fields: [toStageId], references: [id], onDelete: Cascade)
+
+  movedBy User? @relation("TaskWorkflowHistoryMovedBy", fields: [movedById], references: [id], onDelete: SetNull)
+
+  @@index([taskId])
+  @@index([fromStageId])
+  @@index([toStageId])
+  @@index([movedById])
+  @@map("task_workflow_history")
 }
 
 model TaskComment {
