@@ -73,6 +73,72 @@ export class ProjectsService {
     });
   }
 
+  async getProjectTeamCandidates(
+    projectId: string,
+    search: string | undefined,
+    userId: string,
+  ) {
+    await this.assertCanManageProject(projectId, userId);
+
+    const existingProjectTeam = await this.prisma.projectTeam.findFirst({
+      where: {
+        projectId,
+      },
+      select: {
+        teamId: true,
+      },
+    });
+
+    if (existingProjectTeam) {
+      return [];
+    }
+
+    return this.prisma.team.findMany({
+      where: {
+        name: search
+          ? {
+              contains: search,
+              mode: 'insensitive',
+            }
+          : undefined,
+
+        OR: [
+          {
+            creatorId: userId,
+          },
+          {
+            members: {
+              some: {
+                userId,
+                role: {
+                  in: [TeamRole.OWNER, TeamRole.ADMIN],
+                },
+              },
+            },
+          },
+        ],
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      take: 10,
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        avatarUrl: true,
+        creatorId: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            members: true,
+          },
+        },
+      },
+    });
+  }
+
   async getProjects(userId: string) {
     return this.prisma.project.findMany({
       where: {
@@ -323,20 +389,21 @@ export class ProjectsService {
     await this.assertCanManageProject(projectId, userId);
     await this.assertCanUseTeam(dto.teamId, userId);
 
-    const existingProjectTeam = await this.prisma.projectTeam.findUnique({
+    const existingProjectTeam = await this.prisma.projectTeam.findFirst({
       where: {
-        projectId_teamId: {
-          projectId,
-          teamId: dto.teamId,
-        },
+        projectId,
       },
       select: {
-        id: true,
+        teamId: true,
       },
     });
 
     if (existingProjectTeam) {
-      throw new ConflictException('Team already added to this project');
+      if (existingProjectTeam.teamId === dto.teamId) {
+        throw new ConflictException('Team already added to this project');
+      }
+
+      throw new BadRequestException('Project already has a team');
     }
 
     return this.prisma.$transaction(async (tx) => {

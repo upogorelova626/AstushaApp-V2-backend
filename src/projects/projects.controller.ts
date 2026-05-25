@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -20,6 +21,7 @@ import {
   CreateProjectDto,
   ProjectIdParamDto,
   ProjectTeamParamDto,
+  SearchProjectTeamCandidatesDto,
   UpdateProjectDto,
 } from './dto';
 import { ProjectsService } from './projects.service';
@@ -105,6 +107,20 @@ export class ProjectsController {
   ) {
     return this.projectsService.getAssigneeCandidates(
       params.projectId,
+      req.user.id,
+    );
+  }
+
+  @Get(':projectId/team-candidates')
+  @ApiOperation({ summary: 'Найти команды, которые можно добавить в проект' })
+  getProjectTeamCandidates(
+    @Param() params: ProjectIdParamDto,
+    @Query() query: SearchProjectTeamCandidatesDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.projectsService.getProjectTeamCandidates(
+      params.projectId,
+      query.search,
       req.user.id,
     );
   }
