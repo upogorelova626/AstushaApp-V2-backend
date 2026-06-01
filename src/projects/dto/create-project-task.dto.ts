@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
@@ -14,6 +14,27 @@ import {
 
 import { TaskPriority, TaskType } from 'src/generated/prisma/enums';
 
+const trimString = (value: unknown) =>
+  typeof value === 'string' ? value.trim() : value;
+
+const optionalString = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  const trimmedValue = value.trim();
+
+  return trimmedValue.length ? trimmedValue : undefined;
+};
+
+const optionalNumber = (value: unknown) => {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+
+  return Number(value);
+};
+
 export class CreateProjectTaskDto {
   @ApiProperty({
     example: 'Сделать страницу профиля пользователя',
@@ -21,9 +42,7 @@ export class CreateProjectTaskDto {
   })
   @IsString()
   @Length(2, 200)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }: { value: unknown }) => trimString(value))
   title!: string;
 
   @ApiPropertyOptional({
@@ -33,9 +52,7 @@ export class CreateProjectTaskDto {
   @IsOptional()
   @IsString()
   @MaxLength(3000)
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   description?: string;
 
   @ApiPropertyOptional({
@@ -45,6 +62,7 @@ export class CreateProjectTaskDto {
   })
   @IsOptional()
   @IsEnum(TaskType)
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   type?: TaskType;
 
   @ApiPropertyOptional({
@@ -54,14 +72,18 @@ export class CreateProjectTaskDto {
   })
   @IsOptional()
   @IsEnum(TaskPriority)
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   priority?: TaskPriority;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'c1f7d6f5-6c9e-4f2d-9c2e-2d61c5d8d1a1',
-    description: 'ID стадии workflow',
+    description:
+      'ID стадии workflow. Если не передан, задача создаётся в стартовой стадии проекта',
   })
+  @IsOptional()
   @IsUUID()
-  workflowStageId!: string;
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
+  workflowStageId?: string;
 
   @ApiPropertyOptional({
     example: 'd2f7d6f5-6c9e-4f2d-9c2e-2d61c5d8d1a1',
@@ -69,6 +91,7 @@ export class CreateProjectTaskDto {
   })
   @IsOptional()
   @IsUUID()
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   assigneeId?: string;
 
   @ApiPropertyOptional({
@@ -77,6 +100,7 @@ export class CreateProjectTaskDto {
   })
   @IsOptional()
   @IsUUID()
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   sprintId?: string;
 
   @ApiPropertyOptional({
@@ -85,6 +109,7 @@ export class CreateProjectTaskDto {
   })
   @IsOptional()
   @IsUUID()
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   parentId?: string;
 
   @ApiPropertyOptional({
@@ -92,7 +117,7 @@ export class CreateProjectTaskDto {
     description: 'Story points',
   })
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }: { value: unknown }) => optionalNumber(value))
   @IsInt()
   @Min(0)
   storyPoints?: number;
@@ -103,5 +128,6 @@ export class CreateProjectTaskDto {
   })
   @IsOptional()
   @IsDateString()
+  @Transform(({ value }: { value: unknown }) => optionalString(value))
   dueDate?: string;
 }

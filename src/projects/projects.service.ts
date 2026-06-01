@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 
 import {
+  ProjectMemberSource,
+  ProjectPriority,
   ProjectRole,
   ProjectWorkflowType,
   TeamRole,
@@ -36,15 +38,19 @@ export class ProjectsService {
     }
 
     const workflowType = dto.workflowType ?? ProjectWorkflowType.SIMPLE;
-    const workflowStages = this.createWorkflowStagesData(workflowType);
+
+    const workflowStages = this.createWorkflowStagesData(
+      workflowType,
+      dto.workflowStages,
+    );
 
     return this.prisma.project.create({
       data: {
         title: dto.title,
         key: dto.key,
-        description: dto.description,
+        description: dto.description || undefined,
         workflowType,
-        priority: dto.priority,
+        priority: dto.priority ?? ProjectPriority.MEDIUM,
         startDate: dto.startDate ? new Date(dto.startDate) : undefined,
         deadline: dto.deadline ? new Date(dto.deadline) : undefined,
 
@@ -73,72 +79,6 @@ export class ProjectsService {
     });
   }
 
-  async getProjectTeamCandidates(
-    projectId: string,
-    search: string | undefined,
-    userId: string,
-  ) {
-    await this.assertCanManageProject(projectId, userId);
-
-    const existingProjectTeam = await this.prisma.projectTeam.findFirst({
-      where: {
-        projectId,
-      },
-      select: {
-        teamId: true,
-      },
-    });
-
-    if (existingProjectTeam) {
-      return [];
-    }
-
-    return this.prisma.team.findMany({
-      where: {
-        name: search
-          ? {
-              contains: search,
-              mode: 'insensitive',
-            }
-          : undefined,
-
-        OR: [
-          {
-            creatorId: userId,
-          },
-          {
-            members: {
-              some: {
-                userId,
-                role: {
-                  in: [TeamRole.OWNER, TeamRole.ADMIN],
-                },
-              },
-            },
-          },
-        ],
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-      take: 10,
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        avatarUrl: true,
-        creatorId: true,
-        createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: {
-            members: true,
-          },
-        },
-      },
-    });
-  }
-
   async getProjects(userId: string) {
     return this.prisma.project.findMany({
       where: {
@@ -155,10 +95,25 @@ export class ProjectsService {
         creator: {
           select: this.userSelect,
         },
+        teamLink: {
+          include: {
+            team: {
+              include: {
+                creator: {
+                  select: this.userSelect,
+                },
+                _count: {
+                  select: {
+                    members: true,
+                  },
+                },
+              },
+            },
+          },
+        },
         _count: {
           select: {
             members: true,
-            teams: true,
             tasks: true,
           },
         },
@@ -217,6 +172,15 @@ export class ProjectsService {
     const shouldChangeWorkflowType =
       dto.workflowType !== undefined &&
       dto.workflowType !== project.workflowType;
+
+    if (
+      shouldChangeWorkflowType &&
+      dto.workflowType === ProjectWorkflowType.CUSTOM
+    ) {
+      throw new BadRequestException(
+        'Use workflow stage endpoints to configure custom workflow',
+      );
+    }
 
     if (shouldChangeWorkflowType) {
       const tasksCount = await this.prisma.task.count({
@@ -354,15 +318,78 @@ export class ProjectsService {
     return projectMembers.map((projectMember) => projectMember.user);
   }
 
-  async getProjectTeams(projectId: string, userId: string) {
-    await this.getProjectMemberOrThrow(projectId, userId);
+  async getProjectTeamCandidates(
+    projectId: string,
+    search: string | undefined,
+    userId: string,
+  ) {
+    await this.assertCanManageProject(projectId, userId);
 
-    return this.prisma.projectTeam.findMany({
+    const existingProjectTeam = await this.prisma.projectTeam.findUnique({
       where: {
         projectId,
       },
+      select: {
+        teamId: true,
+      },
+    });
+
+    if (existingProjectTeam) {
+      return [];
+    }
+
+    return this.prisma.team.findMany({
+      where: {
+        name: search
+          ? {
+              contains: search,
+              mode: 'insensitive',
+            }
+          : undefined,
+
+        OR: [
+          {
+            creatorId: userId,
+          },
+          {
+            members: {
+              some: {
+                userId,
+                role: {
+                  in: [TeamRole.OWNER, TeamRole.ADMIN],
+                },
+              },
+            },
+          },
+        ],
+      },
       orderBy: {
-        createdAt: 'asc',
+        updatedAt: 'desc',
+      },
+      take: 10,
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        avatarUrl: true,
+        creatorId: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            members: true,
+          },
+        },
+      },
+    });
+  }
+
+  async getProjectTeam(projectId: string, userId: string) {
+    await this.getProjectMemberOrThrow(projectId, userId);
+
+    const projectTeam = await this.prisma.projectTeam.findUnique({
+      where: {
+        projectId,
       },
       include: {
         team: {
@@ -379,6 +406,8 @@ export class ProjectsService {
         },
       },
     });
+
+    return projectTeam?.team ?? null;
   }
 
   async addTeamToProject(
@@ -389,7 +418,7 @@ export class ProjectsService {
     await this.assertCanManageProject(projectId, userId);
     await this.assertCanUseTeam(dto.teamId, userId);
 
-    const existingProjectTeam = await this.prisma.projectTeam.findFirst({
+    const existingProjectTeam = await this.prisma.projectTeam.findUnique({
       where: {
         projectId,
       },
@@ -451,6 +480,8 @@ export class ProjectsService {
             projectId,
             userId: teamMember.userId,
             role: ProjectRole.MEMBER,
+            source: ProjectMemberSource.TEAM,
+            sourceTeamId: dto.teamId,
           })),
           skipDuplicates: true,
         });
@@ -467,12 +498,10 @@ export class ProjectsService {
   ) {
     await this.assertCanManageProject(projectId, userId);
 
-    const existingProjectTeam = await this.prisma.projectTeam.findUnique({
+    const existingProjectTeam = await this.prisma.projectTeam.findFirst({
       where: {
-        projectId_teamId: {
-          projectId,
-          teamId,
-        },
+        projectId,
+        teamId,
       },
       select: {
         id: true,
@@ -483,13 +512,20 @@ export class ProjectsService {
       throw new NotFoundException('Team is not connected to this project');
     }
 
-    await this.prisma.projectTeam.delete({
-      where: {
-        projectId_teamId: {
-          projectId,
-          teamId,
+    await this.prisma.$transaction(async (tx) => {
+      await tx.projectTeam.delete({
+        where: {
+          id: existingProjectTeam.id,
         },
-      },
+      });
+
+      await tx.projectMember.deleteMany({
+        where: {
+          projectId,
+          source: ProjectMemberSource.TEAM,
+          sourceTeamId: teamId,
+        },
+      });
     });
   }
 
@@ -610,19 +646,25 @@ export class ProjectsService {
     }
   }
 
-  private createWorkflowStagesData(workflowType: ProjectWorkflowType) {
-    const stages = this.getDefaultWorkflowStages(workflowType);
+  private createWorkflowStagesData(
+    workflowType: ProjectWorkflowType,
+    customStages?: { name: string }[],
+  ) {
+    const stageNames = this.getWorkflowStageNames(workflowType, customStages);
 
-    return stages.map((name, index) => ({
+    this.validateWorkflowStageNames(stageNames);
+
+    return stageNames.map((name, index) => ({
       name,
       position: index,
       isStart: index === 0,
-      isFinal: index === stages.length - 1,
+      isFinal: index === stageNames.length - 1,
     }));
   }
 
-  private getDefaultWorkflowStages(
+  private getWorkflowStageNames(
     workflowType: ProjectWorkflowType,
+    customStages?: { name: string }[],
   ): string[] {
     switch (workflowType) {
       case ProjectWorkflowType.DEVELOPMENT:
@@ -642,7 +684,28 @@ export class ProjectsService {
         return ['Backlog', 'To Do', 'In Progress', 'Review', 'Done'];
 
       case ProjectWorkflowType.CUSTOM:
-        throw new BadRequestException('Custom workflow is not supported yet');
+        return customStages?.map((stage) => stage.name.trim()) ?? [];
+    }
+  }
+
+  private validateWorkflowStageNames(stageNames: string[]) {
+    if (stageNames.length < 2) {
+      throw new BadRequestException('Workflow must contain at least 2 stages');
+    }
+
+    const hasEmptyStageName = stageNames.some((name) => !name);
+
+    if (hasEmptyStageName) {
+      throw new BadRequestException('Workflow stage name cannot be empty');
+    }
+
+    const normalizedStageNames = stageNames.map((name) => name.toLowerCase());
+
+    const hasDuplicateStageNames =
+      new Set(normalizedStageNames).size !== normalizedStageNames.length;
+
+    if (hasDuplicateStageNames) {
+      throw new BadRequestException('Workflow stage names must be unique');
     }
   }
 
@@ -668,7 +731,7 @@ export class ProjectsService {
         },
       },
     },
-    teams: {
+    teamLink: {
       include: {
         team: {
           include: {
@@ -692,7 +755,6 @@ export class ProjectsService {
     _count: {
       select: {
         members: true,
-        teams: true,
         tasks: true,
       },
     },

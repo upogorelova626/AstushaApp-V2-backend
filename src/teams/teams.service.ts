@@ -196,6 +196,9 @@ export class TeamsService {
       createdAt: team.createdAt,
       updatedAt: team.updatedAt,
       myRole: team.members[0]?.role ?? null,
+
+      _count: team._count,
+
       membersCount: team._count.members,
       projectsCount: team._count.projects,
     };

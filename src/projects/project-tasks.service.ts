@@ -23,7 +23,7 @@ export class ProjectTasksService {
   ) {
     await this.getProjectMemberOrThrow(projectId, userId);
 
-    await this.assertWorkflowStageBelongsToProject(
+    const workflowStage = await this.resolveWorkflowStage(
       projectId,
       dto.workflowStageId,
     );
@@ -33,7 +33,7 @@ export class ProjectTasksService {
     await this.assertParentTaskBelongsToProject(projectId, dto.parentId);
 
     const nextNumber = await this.getNextTaskNumber(projectId);
-    const nextPosition = await this.getNextTaskPosition(dto.workflowStageId);
+    const nextPosition = await this.getNextTaskPosition(workflowStage.id);
 
     return this.prisma.task.create({
       data: {
@@ -55,7 +55,7 @@ export class ProjectTasksService {
 
         workflowStage: {
           connect: {
-            id: dto.workflowStageId,
+            id: workflowStage.id,
           },
         },
 
@@ -93,6 +93,56 @@ export class ProjectTasksService {
     });
   }
 
+  private async resolveWorkflowStage(
+    projectId: string,
+    workflowStageId?: string,
+  ) {
+    if (workflowStageId) {
+      const workflowStage = await this.prisma.projectWorkflowStage.findFirst({
+        where: {
+          id: workflowStageId,
+          projectId,
+        },
+      });
+
+      if (!workflowStage) {
+        throw new BadRequestException('Workflow-этап не найден в этом проекте');
+      }
+
+      return workflowStage;
+    }
+
+    const startWorkflowStage = await this.prisma.projectWorkflowStage.findFirst(
+      {
+        where: {
+          projectId,
+          isStart: true,
+        },
+      },
+    );
+
+    if (startWorkflowStage) {
+      return startWorkflowStage;
+    }
+
+    const firstWorkflowStage = await this.prisma.projectWorkflowStage.findFirst(
+      {
+        where: {
+          projectId,
+        },
+        orderBy: {
+          position: 'asc',
+        },
+      },
+    );
+
+    if (!firstWorkflowStage) {
+      throw new BadRequestException('У проекта нет workflow-этапов');
+    }
+
+    return firstWorkflowStage;
+  }
+
   async getTaskById(projectId: string, taskId: string, userId: string) {
     await this.getProjectMemberOrThrow(projectId, userId);
 
@@ -109,6 +159,22 @@ export class ProjectTasksService {
     }
 
     return task;
+  }
+
+  async getProjectTasks(projectId: string, userId: string) {
+    await this.getProjectMemberOrThrow(projectId, userId);
+
+    return this.prisma.task.findMany({
+      where: {
+        projectId,
+      },
+      orderBy: [
+        {
+          number: 'asc',
+        },
+      ],
+      include: this.taskInclude,
+    });
   }
 
   async updateTask(
@@ -138,33 +204,51 @@ export class ProjectTasksService {
         type: dto.type,
         priority: dto.priority,
         storyPoints: dto.storyPoints,
-        dueDate: dto.dueDate !== undefined ? new Date(dto.dueDate) : undefined,
+
+        dueDate:
+          dto.dueDate !== undefined
+            ? dto.dueDate
+              ? new Date(dto.dueDate)
+              : null
+            : undefined,
 
         assignee:
           dto.assigneeId !== undefined
-            ? {
-                connect: {
-                  id: dto.assigneeId,
-                },
-              }
+            ? dto.assigneeId
+              ? {
+                  connect: {
+                    id: dto.assigneeId,
+                  },
+                }
+              : {
+                  disconnect: true,
+                }
             : undefined,
 
         sprint:
           dto.sprintId !== undefined
-            ? {
-                connect: {
-                  id: dto.sprintId,
-                },
-              }
+            ? dto.sprintId
+              ? {
+                  connect: {
+                    id: dto.sprintId,
+                  },
+                }
+              : {
+                  disconnect: true,
+                }
             : undefined,
 
         parent:
           dto.parentId !== undefined
-            ? {
-                connect: {
-                  id: dto.parentId,
-                },
-              }
+            ? dto.parentId
+              ? {
+                  connect: {
+                    id: dto.parentId,
+                  },
+                }
+              : {
+                  disconnect: true,
+                }
             : undefined,
       },
       include: this.taskInclude,
@@ -192,7 +276,7 @@ export class ProjectTasksService {
 
     const task = await this.getTaskOrThrow(projectId, taskId);
 
-    await this.assertWorkflowStageBelongsToProject(
+    const targetStage = await this.assertWorkflowStageBelongsToProject(
       projectId,
       dto.workflowStageId,
     );
@@ -227,21 +311,28 @@ export class ProjectTasksService {
               id: taskId,
             },
           },
+
           fromStage: {
             connect: {
               id: task.workflowStageId,
             },
           },
+
           toStage: {
             connect: {
               id: dto.workflowStageId,
             },
           },
+
+          fromStageName: task.workflowStage.name,
+          toStageName: targetStage.name,
+
           movedBy: {
             connect: {
               id: userId,
             },
           },
+
           previousPosition: task.position,
           newPosition: nextPosition,
         },
@@ -291,6 +382,12 @@ export class ProjectTasksService {
         id: true,
         position: true,
         workflowStageId: true,
+        workflowStage: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     });
 
@@ -312,17 +409,23 @@ export class ProjectTasksService {
       },
       select: {
         id: true,
+        name: true,
+        position: true,
+        isStart: true,
+        isFinal: true,
       },
     });
 
     if (!workflowStage) {
       throw new NotFoundException('Workflow stage not found in this project');
     }
+
+    return workflowStage;
   }
 
   private async assertAssigneeBelongsToProject(
     projectId: string,
-    assigneeId?: string,
+    assigneeId?: string | null,
   ) {
     if (!assigneeId) {
       return;
@@ -347,7 +450,7 @@ export class ProjectTasksService {
 
   private async assertSprintBelongsToProject(
     projectId: string,
-    sprintId?: string,
+    sprintId?: string | null,
   ) {
     if (!sprintId) {
       return;
@@ -370,7 +473,7 @@ export class ProjectTasksService {
 
   private async assertParentTaskBelongsToProject(
     projectId: string,
-    parentId?: string,
+    parentId?: string | null,
     currentTaskId?: string,
   ) {
     if (!parentId) {

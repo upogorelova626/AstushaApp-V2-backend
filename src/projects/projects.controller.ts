@@ -125,13 +125,13 @@ export class ProjectsController {
     );
   }
 
-  @Get(':projectId/teams')
-  @ApiOperation({ summary: 'Получить команды проекта' })
-  getProjectTeams(
+  @Get(':projectId/team')
+  @ApiOperation({ summary: 'Получить команду проекта' })
+  getProjectTeam(
     @Param() params: ProjectIdParamDto,
     @Req() req: RequestWithUser,
   ) {
-    return this.projectsService.getProjectTeams(params.projectId, req.user.id);
+    return this.projectsService.getProjectTeam(params.projectId, req.user.id);
   }
 
   @Post(':projectId/teams')

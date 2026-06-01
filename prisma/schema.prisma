@@ -41,6 +41,11 @@ enum ProjectPriority {
   CRITICAL
 }
 
+enum ProjectMemberSource {
+  MANUAL
+  TEAM
+}
+
 enum TaskType {
   TASK
   BUG
@@ -63,15 +68,16 @@ enum SprintStatus {
 }
 
 model User {
-  id           String  @id @default(uuid())
-  login        String  @unique
-  email        String  @unique
+  id           String @id @default(uuid())
+  login        String @unique
+  email        String @unique
   passwordHash String
-  firstName    String?
-  lastName     String?
-  avatarUrl    String?
-  position     String?
-  about        String?
+
+  firstName String?
+  lastName  String?
+  avatarUrl String?
+  position  String?
+  about     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -154,7 +160,7 @@ model Project {
   updatedAt DateTime @updatedAt
 
   members        ProjectMember[]
-  teams          ProjectTeam[]
+  teamLink       ProjectTeam?
   workflowStages ProjectWorkflowStage[]
 
   tasks   Task[]
@@ -174,14 +180,20 @@ model ProjectMember {
 
   role ProjectRole @default(MEMBER)
 
+  source       ProjectMemberSource @default(MANUAL)
+  sourceTeamId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  sourceTeam Team? @relation("ProjectMemberSourceTeam", fields: [sourceTeamId], references: [id], onDelete: SetNull)
+
   @@unique([projectId, userId])
   @@index([userId])
+  @@index([sourceTeamId])
   @@map("project_members")
 }
 
@@ -209,6 +221,8 @@ model ProjectWorkflowStage {
   @@unique([projectId, name])
   @@unique([projectId, position])
   @@index([projectId])
+  @@index([projectId, isStart])
+  @@index([projectId, isFinal])
   @@map("project_workflow_stages")
 }
 
@@ -226,6 +240,8 @@ model Team {
 
   members  TeamMember[]
   projects ProjectTeam[]
+
+  sourceProjectMembers ProjectMember[] @relation("ProjectMemberSourceTeam")
 
   @@index([creatorId])
   @@map("teams")
@@ -253,7 +269,7 @@ model TeamMember {
 model ProjectTeam {
   id String @id @default(uuid())
 
-  projectId String
+  projectId String @unique
   teamId    String
 
   createdAt DateTime @default(now())
@@ -261,8 +277,6 @@ model ProjectTeam {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([projectId])
-  @@unique([projectId, teamId])
   @@index([teamId])
   @@map("project_teams")
 }
@@ -318,7 +332,7 @@ model Task {
 
   project       Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   sprint        Sprint?              @relation(fields: [sprintId], references: [id], onDelete: SetNull)
-  workflowStage ProjectWorkflowStage @relation(fields: [workflowStageId], references: [id], onDelete: Cascade)
+  workflowStage ProjectWorkflowStage @relation(fields: [workflowStageId], references: [id], onDelete: NoAction)
 
   createdBy User? @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
   assignee  User? @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
@@ -335,6 +349,7 @@ model Task {
   @@index([projectId])
   @@index([sprintId])
   @@index([workflowStageId])
+  @@index([projectId, workflowStageId])
   @@index([workflowStageId, position])
   @@index([assigneeId])
   @@index([createdById])
@@ -347,7 +362,10 @@ model TaskWorkflowHistory {
   taskId String
 
   fromStageId String?
-  toStageId   String
+  toStageId   String?
+
+  fromStageName String?
+  toStageName   String
 
   movedById String?
 
@@ -359,7 +377,7 @@ model TaskWorkflowHistory {
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   fromStage ProjectWorkflowStage? @relation("TaskMovedFromStage", fields: [fromStageId], references: [id], onDelete: SetNull)
-  toStage   ProjectWorkflowStage  @relation("TaskMovedToStage", fields: [toStageId], references: [id], onDelete: Cascade)
+  toStage   ProjectWorkflowStage? @relation("TaskMovedToStage", fields: [toStageId], references: [id], onDelete: SetNull)
 
   movedBy User? @relation("TaskWorkflowHistoryMovedBy", fields: [movedById], references: [id], onDelete: SetNull)
 

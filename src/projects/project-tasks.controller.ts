@@ -58,6 +58,14 @@ export class ProjectTasksController {
     );
   }
 
+  @Get()
+  getProjectTasks(
+    @Param('projectId') projectId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.projectTasksService.getProjectTasks(projectId, req.user.id);
+  }
+
   @Patch(':taskId')
   @ApiOperation({ summary: 'Обновить задачу проекта' })
   updateTask(

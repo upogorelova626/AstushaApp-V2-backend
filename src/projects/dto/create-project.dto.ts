@@ -1,19 +1,38 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsDateString,
   IsEnum,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   Matches,
   MaxLength,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 
 import {
   ProjectPriority,
   ProjectWorkflowType,
 } from 'src/generated/prisma/enums';
+
+export class CreateProjectWorkflowStageDto {
+  @ApiProperty({
+    example: 'To Do',
+    description: 'Название стадии workflow',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(40)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  name!: string;
+}
 
 export class CreateProjectDto {
   @ApiProperty({
@@ -62,6 +81,26 @@ export class CreateProjectDto {
   @IsOptional()
   @IsEnum(ProjectWorkflowType)
   workflowType?: ProjectWorkflowType;
+
+  @ApiPropertyOptional({
+    type: [CreateProjectWorkflowStageDto],
+    example: [
+      { name: 'Идея' },
+      { name: 'В работе' },
+      { name: 'Проверка' },
+      { name: 'Готово' },
+    ],
+    description:
+      'Кастомные стадии проекта. Обязательны, если workflowType = CUSTOM',
+  })
+  @ValidateIf(
+    (dto: CreateProjectDto) => dto.workflowType === ProjectWorkflowType.CUSTOM,
+  )
+  @IsArray()
+  @ArrayMinSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => CreateProjectWorkflowStageDto)
+  workflowStages?: CreateProjectWorkflowStageDto[];
 
   @ApiPropertyOptional({
     enum: ProjectPriority,
