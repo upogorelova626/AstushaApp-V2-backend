@@ -7,9 +7,19 @@ import {
   Query,
   Req,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 
 import {
@@ -22,6 +32,7 @@ import { ChangePasswordDto } from './change-password.dto';
 import { LookupUserDto } from './lookup-user.dto';
 import { UpdateProfileDto } from './update-profile.dto';
 import { UsersService } from './users.service';
+import type { StorageUploadFile } from '../storage/storage.service';
 
 @ApiTags('users')
 @ApiCookieAuth('accessToken')
@@ -43,9 +54,55 @@ export class UsersController {
   }
 
   @ApiOperation({ summary: 'Обновить свой профиль' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        firstName: {
+          type: 'string',
+          example: 'Nikita',
+        },
+        lastName: {
+          type: 'string',
+          example: 'Pogorelov',
+        },
+        position: {
+          type: 'string',
+          example: 'Angular Developer',
+        },
+        about: {
+          type: 'string',
+          example: 'Делаю AstushaApp и люблю кота Астюшу',
+        },
+        avatar: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('avatar', {
+      storage: memoryStorage(),
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+      },
+    }),
+  )
   @Patch('profile')
-  updateProfile(@Req() request: AuthRequest, @Body() dto: UpdateProfileDto) {
-    return this.usersService.updateProfile(request.user.id, dto);
+  updateProfile(
+    @Req() request: AuthRequest,
+    @Body() dto: UpdateProfileDto,
+    @UploadedFile() avatar?: StorageUploadFile,
+  ) {
+    return this.usersService.updateProfile(request.user.id, dto, avatar);
+  }
+
+  @ApiOperation({ summary: 'Удалить аватар профиля' })
+  @Delete('profile/avatar')
+  deleteAvatar(@Req() request: AuthRequest) {
+    return this.usersService.deleteAvatar(request.user.id);
   }
 
   @ApiOperation({ summary: 'Изменить пароль' })

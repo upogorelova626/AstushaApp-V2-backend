@@ -76,6 +76,7 @@ model User {
   firstName String?
   lastName  String?
   avatarUrl String?
+  avatarKey String?
   position  String?
   about     String?
 
@@ -414,6 +415,7 @@ model TaskAttachment {
   uploaderId String
 
   fileName String
+  fileKey  String @unique
   fileUrl  String
   mimeType String?
   size     Int?

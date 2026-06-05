@@ -10,6 +10,7 @@ import { TeamsModule } from './teams/teams.module';
 import { TeamMembersModule } from './team-members/team-members.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks/tasks.module';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { TasksModule } from './tasks/tasks/tasks.module';
     TeamMembersModule,
     ProjectsModule,
     TasksModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [AppService],

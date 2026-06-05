@@ -21,17 +21,6 @@ export class UpdateProfileDto {
   lastName?: string;
 
   @ApiPropertyOptional({
-    example: 'https://example.com/avatar.png',
-    maxLength: 500,
-  })
-  @IsOptional()
-  @IsString({ message: 'Ссылка на аватар должна быть строкой' })
-  @MaxLength(500, {
-    message: 'Ссылка на аватар должна быть не длиннее 500 символов',
-  })
-  avatarUrl?: string;
-
-  @ApiPropertyOptional({
     example: 'Angular Developer',
     maxLength: 100,
   })

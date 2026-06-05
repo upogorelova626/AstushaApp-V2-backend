@@ -8,10 +8,14 @@ import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './change-password.dto';
 import { UpdateProfileDto } from './update-profile.dto';
+import { StorageService, StorageUploadFile } from '../storage/storage.service';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storageService: StorageService,
+  ) {}
 
   findByEmail(email: string) {
     return this.prisma.user.findUnique({
@@ -112,19 +116,116 @@ export class UsersService {
     });
   }
 
-  async updateProfile(userId: string, dto: UpdateProfileDto) {
-    await this.findById(userId);
+  async updateProfile(
+    userId: string,
+    dto: UpdateProfileDto,
+    avatar?: StorageUploadFile,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        avatarKey: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    const data: {
+      firstName?: string | null;
+      lastName?: string | null;
+      position?: string | null;
+      about?: string | null;
+      avatarUrl?: string | null;
+      avatarKey?: string | null;
+    } = {};
+
+    if (dto.firstName !== undefined) {
+      data.firstName = dto.firstName.trim() || null;
+    }
+
+    if (dto.lastName !== undefined) {
+      data.lastName = dto.lastName.trim() || null;
+    }
+
+    if (dto.position !== undefined) {
+      data.position = dto.position.trim() || null;
+    }
+
+    if (dto.about !== undefined) {
+      data.about = dto.about.trim() || null;
+    }
+
+    if (avatar) {
+      const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+      if (!allowedMimeTypes.includes(avatar.mimetype)) {
+        throw new BadRequestException('Можно загрузить только изображение');
+      }
+
+      if (user.avatarKey) {
+        await this.storageService.deleteFile(user.avatarKey);
+      }
+
+      const uploadedAvatar = await this.storageService.uploadFile(
+        avatar,
+        `users/${userId}/avatar`,
+      );
+
+      data.avatarUrl = uploadedAvatar.url;
+      data.avatarKey = uploadedAvatar.key;
+    }
+
+    return this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data,
+      select: {
+        id: true,
+        login: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        position: true,
+        about: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async deleteAvatar(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        avatarKey: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    if (user.avatarKey) {
+      await this.storageService.deleteFile(user.avatarKey);
+    }
 
     return this.prisma.user.update({
       where: {
         id: userId,
       },
       data: {
-        firstName: dto.firstName,
-        lastName: dto.lastName,
-        avatarUrl: dto.avatarUrl,
-        position: dto.position,
-        about: dto.about,
+        avatarUrl: null,
+        avatarKey: null,
       },
       select: {
         id: true,
@@ -182,7 +283,23 @@ export class UsersService {
   }
 
   async deleteProfile(userId: string) {
-    await this.findById(userId);
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+        avatarKey: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    if (user.avatarKey) {
+      await this.storageService.deleteFile(user.avatarKey);
+    }
 
     await this.prisma.user.delete({
       where: {
