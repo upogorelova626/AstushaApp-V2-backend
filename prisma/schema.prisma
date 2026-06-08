@@ -29,9 +29,7 @@ enum ProjectWorkflowType {
 
 enum ProjectStatus {
   ACTIVE
-  PAUSED
   COMPLETED
-  ARCHIVED
 }
 
 enum ProjectPriority {
@@ -150,7 +148,6 @@ model Project {
   startDate   DateTime?
   deadline    DateTime?
   completedAt DateTime?
-  archivedAt  DateTime?
 
   workflowType ProjectWorkflowType @default(SIMPLE)
 

@@ -11,7 +11,7 @@ import {
   MoveProjectTaskDto,
   UpdateProjectTaskDto,
 } from './dto';
-
+import { ProjectStatus } from 'src/generated/prisma/enums';
 @Injectable()
 export class ProjectTasksService {
   constructor(private readonly prisma: PrismaService) {}
@@ -588,4 +588,26 @@ export class ProjectTasksService {
       },
     },
   } as const;
+
+  private async assertProjectIsActive(projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: {
+        id: projectId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.status === ProjectStatus.COMPLETED) {
+      throw new BadRequestException('Cannot create task in completed project');
+    }
+
+    return project;
+  }
 }

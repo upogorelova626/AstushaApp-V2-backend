@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -76,6 +77,15 @@ export class ProjectsController {
     @Req() req: RequestWithUser,
   ) {
     return this.projectsService.deleteProject(params.projectId, req.user.id);
+  }
+
+  @Patch(':projectId/complete')
+  @ApiOperation({ summary: 'Завершить проект' })
+  completeProject(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Req() req: Request & { user: { id: string } },
+  ) {
+    return this.projectsService.completeProject(projectId, req.user.id);
   }
 
   @Get(':projectId/board')

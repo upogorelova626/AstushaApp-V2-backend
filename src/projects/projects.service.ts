@@ -12,6 +12,7 @@ import {
   ProjectRole,
   ProjectWorkflowType,
   TeamRole,
+  ProjectStatus,
 } from 'src/generated/prisma/enums';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -123,6 +124,7 @@ export class ProjectsService {
 
   async getProjectById(projectId: string, userId: string) {
     await this.getProjectMemberOrThrow(projectId, userId);
+    await this.assertProjectIsActive(projectId);
 
     const project = await this.prisma.project.findUnique({
       where: {
@@ -234,6 +236,54 @@ export class ProjectsService {
         },
         include: this.projectInclude,
       });
+    });
+  }
+
+  async completeProject(projectId: string, userId: string) {
+    await this.assertProjectOwner(projectId, userId);
+
+    const project = await this.prisma.project.findUnique({
+      where: {
+        id: projectId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.status === ProjectStatus.COMPLETED) {
+      throw new BadRequestException('Project is already completed');
+    }
+
+    const unfinishedTasksCount = await this.prisma.task.count({
+      where: {
+        projectId,
+        workflowStage: {
+          isFinal: false,
+        },
+      },
+    });
+
+    if (unfinishedTasksCount > 0) {
+      throw new BadRequestException(
+        `Cannot complete project because it has unfinished tasks: ${unfinishedTasksCount}`,
+      );
+    }
+
+    return this.prisma.project.update({
+      where: {
+        id: projectId,
+      },
+      data: {
+        status: ProjectStatus.COMPLETED,
+        completedAt: new Date(),
+      },
+      include: this.projectInclude,
     });
   }
 
@@ -416,6 +466,7 @@ export class ProjectsService {
     userId: string,
   ) {
     await this.assertCanManageProject(projectId, userId);
+    await this.assertProjectIsActive(projectId);
     await this.assertCanUseTeam(dto.teamId, userId);
 
     const existingProjectTeam = await this.prisma.projectTeam.findUnique({
@@ -497,6 +548,7 @@ export class ProjectsService {
     userId: string,
   ) {
     await this.assertCanManageProject(projectId, userId);
+    await this.assertProjectIsActive(projectId);
 
     const existingProjectTeam = await this.prisma.projectTeam.findFirst({
       where: {
@@ -580,6 +632,28 @@ export class ProjectsService {
     }
 
     return projectMember;
+  }
+
+  private async assertProjectIsActive(projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: {
+        id: projectId,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    if (project.status === ProjectStatus.COMPLETED) {
+      throw new BadRequestException('Cannot modify completed project');
+    }
+
+    return project;
   }
 
   private async assertCanUseTeam(teamId: string, userId: string) {
