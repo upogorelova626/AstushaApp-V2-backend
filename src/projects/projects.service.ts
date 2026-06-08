@@ -833,4 +833,83 @@ export class ProjectsService {
       },
     },
   } as const;
+
+  private readonly taskAttachmentSelect = {
+    id: true,
+    originalName: true,
+    storageKey: true,
+    fileUrl: true,
+    mimeType: true,
+    size: true,
+    createdAt: true,
+    uploader: {
+      select: {
+        id: true,
+        login: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+      },
+    },
+  } as const;
+
+  private readonly taskInclude = {
+    createdBy: {
+      select: this.userSelect,
+    },
+    assignee: {
+      select: this.userSelect,
+    },
+    workflowStage: {
+      select: {
+        id: true,
+        name: true,
+        position: true,
+        isStart: true,
+        isFinal: true,
+      },
+    },
+    sprint: {
+      select: {
+        id: true,
+        name: true,
+        goal: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+      },
+    },
+    parent: {
+      select: {
+        id: true,
+        number: true,
+        title: true,
+      },
+    },
+    subtasks: {
+      select: {
+        id: true,
+        number: true,
+        title: true,
+        position: true,
+      },
+      orderBy: {
+        position: 'asc',
+      },
+    },
+    attachments: {
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: this.taskAttachmentSelect,
+    },
+    _count: {
+      select: {
+        comments: true,
+        attachments: true,
+        subtasks: true,
+      },
+    },
+  } as const;
 }

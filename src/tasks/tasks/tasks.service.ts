@@ -15,7 +15,27 @@ export class TasksService {
     avatarUrl: true,
     position: true,
     about: true,
-  };
+  } as const;
+
+  private readonly taskAttachmentSelect = {
+    id: true,
+    originalName: true,
+    storageKey: true,
+    fileUrl: true,
+    mimeType: true,
+    size: true,
+    createdAt: true,
+    uploader: {
+      select: {
+        id: true,
+        login: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+      },
+    },
+  } as const;
 
   private readonly taskInclude = {
     project: {
@@ -57,7 +77,14 @@ export class TasksService {
         title: true,
       },
     },
-  };
+
+    attachments: {
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: this.taskAttachmentSelect,
+    },
+  } as const;
 
   getMyTasks(userId: string) {
     return this.prisma.task.findMany({

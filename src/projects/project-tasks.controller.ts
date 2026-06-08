@@ -45,25 +45,29 @@ export class ProjectTasksController {
     );
   }
 
-  @Get(':taskId')
-  @ApiOperation({ summary: 'Получить задачу проекта по ID' })
-  getTaskById(
-    @Param() params: ProjectTaskParamDto,
+  @Get()
+  @ApiOperation({ summary: 'Получить задачи проекта' })
+  getProjectTasks(
+    @Param() params: ProjectIdParamDto,
     @Req() req: RequestWithUser,
   ) {
-    return this.projectTasksService.getTaskById(
+    return this.projectTasksService.getProjectTasks(
       params.projectId,
-      params.taskId,
       req.user.id,
     );
   }
 
-  @Get()
-  getProjectTasks(
-    @Param('projectId') projectId: string,
+  @Get(':taskId')
+  @ApiOperation({ summary: 'Получить задачу проекта по ID' })
+  getProjectTaskById(
+    @Param() params: ProjectTaskParamDto,
     @Req() req: RequestWithUser,
   ) {
-    return this.projectTasksService.getProjectTasks(projectId, req.user.id);
+    return this.projectTasksService.getProjectTaskById(
+      params.projectId,
+      params.taskId,
+      req.user.id,
+    );
   }
 
   @Patch(':taskId')

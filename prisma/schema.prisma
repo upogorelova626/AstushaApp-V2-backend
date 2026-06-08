@@ -411,11 +411,11 @@ model TaskAttachment {
   taskId     String
   uploaderId String
 
-  fileName String
-  fileKey  String @unique
-  fileUrl  String
-  mimeType String?
-  size     Int?
+  originalName String
+  storageKey   String @unique
+  fileUrl      String?
+  mimeType     String
+  size         Int
 
   createdAt DateTime @default(now())
 

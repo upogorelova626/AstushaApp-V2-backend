@@ -5,13 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import { ProjectStatus } from 'src/generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateProjectTaskDto,
   MoveProjectTaskDto,
   UpdateProjectTaskDto,
 } from './dto';
-import { ProjectStatus } from 'src/generated/prisma/enums';
+
 @Injectable()
 export class ProjectTasksService {
   constructor(private readonly prisma: PrismaService) {}
@@ -22,6 +23,11 @@ export class ProjectTasksService {
     userId: string,
   ) {
     await this.getProjectMemberOrThrow(projectId, userId);
+    await this.assertProjectIsActive(projectId);
+
+    if (!dto.workflowStageId) {
+      throw new BadRequestException('Стадия workflow обязательна');
+    }
 
     const workflowStage = await this.resolveWorkflowStage(
       projectId,
@@ -93,57 +99,28 @@ export class ProjectTasksService {
     });
   }
 
-  private async resolveWorkflowStage(
-    projectId: string,
-    workflowStageId?: string,
-  ) {
-    if (workflowStageId) {
-      const workflowStage = await this.prisma.projectWorkflowStage.findFirst({
-        where: {
-          id: workflowStageId,
-          projectId,
-        },
-      });
+  async getProjectTasks(projectId: string, userId: string) {
+    await this.getProjectMemberOrThrow(projectId, userId);
 
-      if (!workflowStage) {
-        throw new BadRequestException('Workflow-этап не найден в этом проекте');
-      }
-
-      return workflowStage;
-    }
-
-    const startWorkflowStage = await this.prisma.projectWorkflowStage.findFirst(
-      {
-        where: {
-          projectId,
-          isStart: true,
-        },
+    return this.prisma.task.findMany({
+      where: {
+        projectId,
       },
-    );
-
-    if (startWorkflowStage) {
-      return startWorkflowStage;
-    }
-
-    const firstWorkflowStage = await this.prisma.projectWorkflowStage.findFirst(
-      {
-        where: {
-          projectId,
+      orderBy: [
+        {
+          workflowStage: {
+            position: 'asc',
+          },
         },
-        orderBy: {
+        {
           position: 'asc',
         },
-      },
-    );
-
-    if (!firstWorkflowStage) {
-      throw new BadRequestException('У проекта нет workflow-этапов');
-    }
-
-    return firstWorkflowStage;
+      ],
+      include: this.taskInclude,
+    });
   }
 
-  async getTaskById(projectId: string, taskId: string, userId: string) {
+  async getProjectTaskById(projectId: string, taskId: string, userId: string) {
     await this.getProjectMemberOrThrow(projectId, userId);
 
     const task = await this.prisma.task.findFirst({
@@ -155,26 +132,10 @@ export class ProjectTasksService {
     });
 
     if (!task) {
-      throw new NotFoundException('Task not found');
+      throw new NotFoundException('Задача не найдена');
     }
 
     return task;
-  }
-
-  async getProjectTasks(projectId: string, userId: string) {
-    await this.getProjectMemberOrThrow(projectId, userId);
-
-    return this.prisma.task.findMany({
-      where: {
-        projectId,
-      },
-      orderBy: [
-        {
-          number: 'asc',
-        },
-      ],
-      include: this.taskInclude,
-    });
   }
 
   async updateTask(
@@ -184,6 +145,7 @@ export class ProjectTasksService {
     userId: string,
   ) {
     await this.getProjectMemberOrThrow(projectId, userId);
+    await this.assertProjectIsActive(projectId);
     await this.getTaskOrThrow(projectId, taskId);
 
     await this.assertAssigneeBelongsToProject(projectId, dto.assigneeId);
@@ -204,13 +166,7 @@ export class ProjectTasksService {
         type: dto.type,
         priority: dto.priority,
         storyPoints: dto.storyPoints,
-
-        dueDate:
-          dto.dueDate !== undefined
-            ? dto.dueDate
-              ? new Date(dto.dueDate)
-              : null
-            : undefined,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
 
         assignee:
           dto.assigneeId !== undefined
@@ -257,6 +213,7 @@ export class ProjectTasksService {
 
   async deleteTask(projectId: string, taskId: string, userId: string) {
     await this.getProjectMemberOrThrow(projectId, userId);
+    await this.assertProjectIsActive(projectId);
     await this.getTaskOrThrow(projectId, taskId);
 
     await this.prisma.task.delete({
@@ -264,6 +221,10 @@ export class ProjectTasksService {
         id: taskId,
       },
     });
+
+    return {
+      success: true,
+    };
   }
 
   async moveTask(
@@ -273,72 +234,23 @@ export class ProjectTasksService {
     userId: string,
   ) {
     await this.getProjectMemberOrThrow(projectId, userId);
+    await this.assertProjectIsActive(projectId);
+    await this.getTaskOrThrow(projectId, taskId);
 
-    const task = await this.getTaskOrThrow(projectId, taskId);
-
-    const targetStage = await this.assertWorkflowStageBelongsToProject(
+    const workflowStage = await this.resolveWorkflowStage(
       projectId,
       dto.workflowStageId,
     );
 
-    const nextPosition =
-      dto.position !== undefined
-        ? dto.position
-        : task.workflowStageId === dto.workflowStageId
-          ? task.position
-          : await this.getNextTaskPosition(dto.workflowStageId);
-
-    return this.prisma.$transaction(async (tx) => {
-      const updatedTask = await tx.task.update({
-        where: {
-          id: taskId,
-        },
-        data: {
-          position: nextPosition,
-          workflowStage: {
-            connect: {
-              id: dto.workflowStageId,
-            },
-          },
-        },
-        include: this.taskInclude,
-      });
-
-      await tx.taskWorkflowHistory.create({
-        data: {
-          task: {
-            connect: {
-              id: taskId,
-            },
-          },
-
-          fromStage: {
-            connect: {
-              id: task.workflowStageId,
-            },
-          },
-
-          toStage: {
-            connect: {
-              id: dto.workflowStageId,
-            },
-          },
-
-          fromStageName: task.workflowStage.name,
-          toStageName: targetStage.name,
-
-          movedBy: {
-            connect: {
-              id: userId,
-            },
-          },
-
-          previousPosition: task.position,
-          newPosition: nextPosition,
-        },
-      });
-
-      return updatedTask;
+    return this.prisma.task.update({
+      where: {
+        id: taskId,
+      },
+      data: {
+        workflowStageId: workflowStage.id,
+        position: dto.position,
+      },
+      include: this.taskInclude,
     });
   }
 
@@ -350,26 +262,39 @@ export class ProjectTasksService {
           userId,
         },
       },
+      select: {
+        id: true,
+        role: true,
+      },
     });
 
-    if (projectMember) {
-      return projectMember;
+    if (!projectMember) {
+      throw new ForbiddenException('Нет доступа к проекту');
     }
 
+    return projectMember;
+  }
+
+  private async assertProjectIsActive(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: {
         id: projectId,
       },
       select: {
         id: true,
+        status: true,
       },
     });
 
     if (!project) {
-      throw new NotFoundException('Project not found');
+      throw new NotFoundException('Проект не найден');
     }
 
-    throw new ForbiddenException('You are not a member of this project');
+    if (project.status === ProjectStatus.COMPLETED) {
+      throw new BadRequestException('Нельзя изменять завершённый проект');
+    }
+
+    return project;
   }
 
   private async getTaskOrThrow(projectId: string, taskId: string) {
@@ -380,25 +305,17 @@ export class ProjectTasksService {
       },
       select: {
         id: true,
-        position: true,
-        workflowStageId: true,
-        workflowStage: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
       },
     });
 
     if (!task) {
-      throw new NotFoundException('Task not found');
+      throw new NotFoundException('Задача не найдена');
     }
 
     return task;
   }
 
-  private async assertWorkflowStageBelongsToProject(
+  private async resolveWorkflowStage(
     projectId: string,
     workflowStageId: string,
   ) {
@@ -409,15 +326,11 @@ export class ProjectTasksService {
       },
       select: {
         id: true,
-        name: true,
-        position: true,
-        isStart: true,
-        isFinal: true,
       },
     });
 
     if (!workflowStage) {
-      throw new NotFoundException('Workflow stage not found in this project');
+      throw new NotFoundException('Стадия workflow не найдена');
     }
 
     return workflowStage;
@@ -425,7 +338,7 @@ export class ProjectTasksService {
 
   private async assertAssigneeBelongsToProject(
     projectId: string,
-    assigneeId?: string | null,
+    assigneeId?: string,
   ) {
     if (!assigneeId) {
       return;
@@ -444,13 +357,15 @@ export class ProjectTasksService {
     });
 
     if (!projectMember) {
-      throw new BadRequestException('Assignee is not a member of this project');
+      throw new BadRequestException(
+        'Исполнитель не является участником проекта',
+      );
     }
   }
 
   private async assertSprintBelongsToProject(
     projectId: string,
-    sprintId?: string | null,
+    sprintId?: string,
   ) {
     if (!sprintId) {
       return;
@@ -467,21 +382,23 @@ export class ProjectTasksService {
     });
 
     if (!sprint) {
-      throw new BadRequestException('Sprint not found in this project');
+      throw new BadRequestException('Спринт не принадлежит проекту');
     }
   }
 
   private async assertParentTaskBelongsToProject(
     projectId: string,
-    parentId?: string | null,
+    parentId?: string,
     currentTaskId?: string,
   ) {
     if (!parentId) {
       return;
     }
 
-    if (currentTaskId && parentId === currentTaskId) {
-      throw new BadRequestException('Task cannot be parent of itself');
+    if (parentId === currentTaskId) {
+      throw new BadRequestException(
+        'Задача не может быть родителем самой себя',
+      );
     }
 
     const parentTask = await this.prisma.task.findFirst({
@@ -495,34 +412,40 @@ export class ProjectTasksService {
     });
 
     if (!parentTask) {
-      throw new BadRequestException('Parent task not found in this project');
+      throw new BadRequestException('Родительская задача не найдена');
     }
   }
 
   private async getNextTaskNumber(projectId: string) {
-    const aggregate = await this.prisma.task.aggregate({
+    const lastTask = await this.prisma.task.findFirst({
       where: {
         projectId,
       },
-      _max: {
+      orderBy: {
+        number: 'desc',
+      },
+      select: {
         number: true,
       },
     });
 
-    return (aggregate._max.number ?? 0) + 1;
+    return (lastTask?.number ?? 0) + 1;
   }
 
   private async getNextTaskPosition(workflowStageId: string) {
-    const aggregate = await this.prisma.task.aggregate({
+    const lastTask = await this.prisma.task.findFirst({
       where: {
         workflowStageId,
       },
-      _max: {
+      orderBy: {
+        position: 'desc',
+      },
+      select: {
         position: true,
       },
     });
 
-    return (aggregate._max.position ?? -1) + 1;
+    return (lastTask?.position ?? 0) + 1;
   }
 
   private readonly userSelect = {
@@ -536,13 +459,39 @@ export class ProjectTasksService {
     about: true,
   } as const;
 
+  private readonly taskAttachmentSelect = {
+    id: true,
+    originalName: true,
+    storageKey: true,
+    fileUrl: true,
+    mimeType: true,
+    size: true,
+    createdAt: true,
+    uploader: {
+      select: {
+        id: true,
+        login: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+      },
+    },
+  } as const;
+
   private readonly taskInclude = {
-    createdBy: {
-      select: this.userSelect,
+    project: {
+      select: {
+        id: true,
+        title: true,
+        key: true,
+        status: true,
+        priority: true,
+        startDate: true,
+        deadline: true,
+      },
     },
-    assignee: {
-      select: this.userSelect,
-    },
+
     workflowStage: {
       select: {
         id: true,
@@ -552,16 +501,17 @@ export class ProjectTasksService {
         isFinal: true,
       },
     },
-    sprint: {
-      select: {
-        id: true,
-        name: true,
-        goal: true,
-        status: true,
-        startDate: true,
-        endDate: true,
-      },
+
+    createdBy: {
+      select: this.userSelect,
     },
+
+    assignee: {
+      select: this.userSelect,
+    },
+
+    sprint: true,
+
     parent: {
       select: {
         id: true,
@@ -569,6 +519,7 @@ export class ProjectTasksService {
         title: true,
       },
     },
+
     subtasks: {
       select: {
         id: true,
@@ -580,6 +531,14 @@ export class ProjectTasksService {
         position: 'asc',
       },
     },
+
+    attachments: {
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: this.taskAttachmentSelect,
+    },
+
     _count: {
       select: {
         comments: true,
@@ -588,26 +547,4 @@ export class ProjectTasksService {
       },
     },
   } as const;
-
-  private async assertProjectIsActive(projectId: string) {
-    const project = await this.prisma.project.findUnique({
-      where: {
-        id: projectId,
-      },
-      select: {
-        id: true,
-        status: true,
-      },
-    });
-
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-
-    if (project.status === ProjectStatus.COMPLETED) {
-      throw new BadRequestException('Cannot create task in completed project');
-    }
-
-    return project;
-  }
 }
