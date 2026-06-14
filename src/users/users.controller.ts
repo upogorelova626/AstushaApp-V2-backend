@@ -28,11 +28,12 @@ import {
 } from '../auth/constants/auth-cookie.const';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthRequest } from '../auth/types/auth-request.type';
+import type { StorageUploadFile } from '../storage/storage.service';
 import { ChangePasswordDto } from './change-password.dto';
 import { LookupUserDto } from './lookup-user.dto';
 import { UpdateProfileDto } from './update-profile.dto';
+import { UpdateUserThemeDto } from './update-user-theme.dto';
 import { UsersService } from './users.service';
-import type { StorageUploadFile } from '../storage/storage.service';
 
 @ApiTags('users')
 @ApiCookieAuth('accessToken')
@@ -109,6 +110,25 @@ export class UsersController {
   @Patch('profile/password')
   changePassword(@Req() request: AuthRequest, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword(request.user.id, dto);
+  }
+
+  @ApiOperation({ summary: 'Сменить тему аккаунта' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        theme: {
+          type: 'string',
+          enum: ['LIGHT', 'DARK'],
+          example: 'DARK',
+        },
+      },
+      required: ['theme'],
+    },
+  })
+  @Patch('profile/theme')
+  updateTheme(@Req() request: AuthRequest, @Body() dto: UpdateUserThemeDto) {
+    return this.usersService.updateMyTheme(request.user.id, dto.theme);
   }
 
   @ApiOperation({ summary: 'Удалить свой аккаунт' })

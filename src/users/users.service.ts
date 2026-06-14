@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './change-password.dto';
 import { UpdateProfileDto } from './update-profile.dto';
 import { StorageService, StorageUploadFile } from '../storage/storage.service';
+import { UserTheme } from 'src/generated/prisma/enums';
 
 @Injectable()
 export class UsersService {
@@ -16,6 +17,20 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
   ) {}
+
+  private readonly profileSelect = {
+    id: true,
+    login: true,
+    email: true,
+    firstName: true,
+    lastName: true,
+    avatarUrl: true,
+    position: true,
+    about: true,
+    theme: true,
+    createdAt: true,
+    updatedAt: true,
+  } as const;
 
   findByEmail(email: string) {
     return this.prisma.user.findUnique({
@@ -77,18 +92,7 @@ export class UsersService {
       where: {
         id,
       },
-      select: {
-        id: true,
-        login: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        avatarUrl: true,
-        position: true,
-        about: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: this.profileSelect,
     });
 
     if (!user) {
@@ -101,18 +105,7 @@ export class UsersService {
   createUser(data: { login: string; email: string; passwordHash: string }) {
     return this.prisma.user.create({
       data,
-      select: {
-        id: true,
-        login: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        avatarUrl: true,
-        position: true,
-        about: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: this.profileSelect,
     });
   }
 
@@ -185,18 +178,7 @@ export class UsersService {
         id: userId,
       },
       data,
-      select: {
-        id: true,
-        login: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        avatarUrl: true,
-        position: true,
-        about: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: this.profileSelect,
     });
   }
 
@@ -227,18 +209,7 @@ export class UsersService {
         avatarUrl: null,
         avatarKey: null,
       },
-      select: {
-        id: true,
-        login: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        avatarUrl: true,
-        position: true,
-        about: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: this.profileSelect,
     });
   }
 
@@ -310,5 +281,30 @@ export class UsersService {
     return {
       success: true,
     };
+  }
+
+  async updateMyTheme(userId: string, theme: UserTheme) {
+    const user = await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    return this.prisma.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        theme,
+      },
+      select: this.profileSelect,
+    });
   }
 }

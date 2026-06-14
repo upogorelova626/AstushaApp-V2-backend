@@ -11,6 +11,7 @@ import { TeamMembersModule } from './team-members/team-members.module';
 import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks/tasks.module';
 import { StorageModule } from './storage/storage.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { StorageModule } from './storage/storage.module';
     ProjectsModule,
     TasksModule,
     StorageModule,
+    AiModule,
   ],
   controllers: [AppController],
   providers: [AppService],
