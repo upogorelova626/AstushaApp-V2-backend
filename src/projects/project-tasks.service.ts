@@ -148,13 +148,9 @@ export class ProjectTasksService {
     await this.assertProjectIsActive(projectId);
     await this.getTaskOrThrow(projectId, taskId);
 
-    await this.assertAssigneeBelongsToProject(projectId, dto.assigneeId);
-    await this.assertSprintBelongsToProject(projectId, dto.sprintId);
-    await this.assertParentTaskBelongsToProject(
-      projectId,
-      dto.parentId,
-      taskId,
-    );
+    if (dto.assigneeId) {
+      await this.assertAssigneeBelongsToProject(projectId, dto.assigneeId);
+    }
 
     return this.prisma.task.update({
       where: {
@@ -166,7 +162,12 @@ export class ProjectTasksService {
         type: dto.type,
         priority: dto.priority,
         storyPoints: dto.storyPoints,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        dueDate:
+          dto.dueDate !== undefined
+            ? dto.dueDate
+              ? new Date(dto.dueDate)
+              : null
+            : undefined,
 
         assignee:
           dto.assigneeId !== undefined
@@ -174,32 +175,6 @@ export class ProjectTasksService {
               ? {
                   connect: {
                     id: dto.assigneeId,
-                  },
-                }
-              : {
-                  disconnect: true,
-                }
-            : undefined,
-
-        sprint:
-          dto.sprintId !== undefined
-            ? dto.sprintId
-              ? {
-                  connect: {
-                    id: dto.sprintId,
-                  },
-                }
-              : {
-                  disconnect: true,
-                }
-            : undefined,
-
-        parent:
-          dto.parentId !== undefined
-            ? dto.parentId
-              ? {
-                  connect: {
-                    id: dto.parentId,
                   },
                 }
               : {

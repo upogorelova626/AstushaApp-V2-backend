@@ -49,7 +49,8 @@ export class TaskAttachmentsService {
     await this.getProjectMemberOrThrow(projectId, userId);
     await this.getTaskOrThrow(projectId, taskId);
 
-    const createdAttachments: Array<{ id: string; storageKey: string }> = [];
+    const uploadedStorageKeys: string[] = [];
+    const createdAttachmentIds: string[] = [];
 
     try {
       for (const file of files) {
@@ -58,11 +59,13 @@ export class TaskAttachmentsService {
           `projects/${projectId}/tasks/${taskId}/attachments`,
         );
 
+        uploadedStorageKeys.push(uploadedFile.key);
+
         const attachment = await this.prisma.taskAttachment.create({
           data: {
             taskId,
             uploaderId: userId,
-            originalName: uploadedFile.originalName,
+            originalName: this.normalizeFileName(uploadedFile.originalName),
             storageKey: uploadedFile.key,
             fileUrl: uploadedFile.url,
             mimeType: uploadedFile.mimeType,
@@ -71,16 +74,13 @@ export class TaskAttachmentsService {
           select: this.attachmentSelect,
         });
 
-        createdAttachments.push({
-          id: attachment.id,
-          storageKey: attachment.storageKey,
-        });
+        createdAttachmentIds.push(attachment.id);
       }
 
       return this.prisma.taskAttachment.findMany({
         where: {
           id: {
-            in: createdAttachments.map((attachment) => attachment.id),
+            in: createdAttachmentIds,
           },
         },
         orderBy: {
@@ -89,9 +89,11 @@ export class TaskAttachmentsService {
         select: this.attachmentSelect,
       });
     } catch (error) {
-      for (const attachment of createdAttachments) {
-        await this.storageService.deleteFile(attachment.storageKey);
-      }
+      await Promise.allSettled(
+        uploadedStorageKeys.map((storageKey) =>
+          this.storageService.deleteFile(storageKey),
+        ),
+      );
 
       throw error;
     }
@@ -158,6 +160,24 @@ export class TaskAttachmentsService {
     return {
       success: true,
     };
+  }
+
+  private normalizeFileName(fileName: string): string {
+    if (!this.hasBrokenCyrillicEncoding(fileName)) {
+      return fileName;
+    }
+
+    const decodedFileName = Buffer.from(fileName, 'latin1').toString('utf8');
+
+    if (decodedFileName.includes('�')) {
+      return fileName;
+    }
+
+    return decodedFileName;
+  }
+
+  private hasBrokenCyrillicEncoding(fileName: string): boolean {
+    return /[ÐÑ]/.test(fileName);
   }
 
   private async getProjectMemberOrThrow(projectId: string, userId: string) {
