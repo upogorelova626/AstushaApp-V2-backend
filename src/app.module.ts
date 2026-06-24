@@ -12,6 +12,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { TasksModule } from './tasks/tasks/tasks.module';
 import { StorageModule } from './storage/storage.module';
 import { AiModule } from './ai/ai.module';
+import { TaskCommentsModule } from './task-comments/task-comments.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AiModule } from './ai/ai.module';
     TasksModule,
     StorageModule,
     AiModule,
+    TaskCommentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
