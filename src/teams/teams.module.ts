@@ -1,30 +1,12 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { JwtModule } from '@nestjs/jwt';
-import type { StringValue } from 'ms';
 
+import { AuthModule } from '../auth/auth.module';
+import { PrismaModule } from '../prisma/prisma.module';
 import { TeamsController } from './teams.controller';
 import { TeamsService } from './teams.service';
 
 @Module({
-  imports: [
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => {
-        const expiresIn = configService.getOrThrow<string>(
-          'JWT_EXPIRES_IN',
-        ) as StringValue;
-
-        return {
-          secret: configService.getOrThrow<string>('JWT_SECRET'),
-          signOptions: {
-            expiresIn,
-          },
-        };
-      },
-    }),
-  ],
+  imports: [PrismaModule, AuthModule],
   controllers: [TeamsController],
   providers: [TeamsService],
 })

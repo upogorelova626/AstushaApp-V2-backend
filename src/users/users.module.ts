@@ -20,7 +20,7 @@ import { UsersService } from './users.service';
         ) as StringValue;
 
         return {
-          secret: configService.getOrThrow<string>('JWT_SECRET'),
+          secret: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
           signOptions: {
             expiresIn,
           },

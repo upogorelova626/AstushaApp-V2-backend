@@ -307,4 +307,45 @@ export class UsersService {
       select: this.profileSelect,
     });
   }
+
+  async findOrCreateByAstushaIdUser(data: {
+    astushaIdUserId: string;
+    email: string;
+  }) {
+    const linkedUser = await this.prisma.user.findUnique({
+      where: {
+        astushaIdUserId: data.astushaIdUserId,
+      },
+    });
+
+    if (linkedUser) {
+      return linkedUser;
+    }
+
+    const userByEmail = await this.prisma.user.findUnique({
+      where: {
+        email: data.email,
+      },
+    });
+
+    if (userByEmail) {
+      return this.prisma.user.update({
+        where: {
+          id: userByEmail.id,
+        },
+        data: {
+          astushaIdUserId: data.astushaIdUserId,
+        },
+      });
+    }
+
+    return this.prisma.user.create({
+      data: {
+        astushaIdUserId: data.astushaIdUserId,
+        email: data.email,
+        login: `astusha_${data.astushaIdUserId}`,
+        passwordHash: 'managed-by-astusha-id',
+      },
+    });
+  }
 }
