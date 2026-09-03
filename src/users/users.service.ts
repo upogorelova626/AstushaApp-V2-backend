@@ -308,42 +308,18 @@ export class UsersService {
     });
   }
 
-  async findOrCreateByAstushaIdUser(data: {
-    astushaIdUserId: string;
-    email: string;
-  }) {
-    const linkedUser = await this.prisma.user.findUnique({
+  async findOrCreateByAstushaIdUser(data: { id: string; email: string }) {
+    return this.prisma.user.upsert({
       where: {
-        astushaIdUserId: data.astushaIdUserId,
+        id: data.id,
       },
-    });
-
-    if (linkedUser) {
-      return linkedUser;
-    }
-
-    const userByEmail = await this.prisma.user.findUnique({
-      where: {
+      update: {
         email: data.email,
       },
-    });
-
-    if (userByEmail) {
-      return this.prisma.user.update({
-        where: {
-          id: userByEmail.id,
-        },
-        data: {
-          astushaIdUserId: data.astushaIdUserId,
-        },
-      });
-    }
-
-    return this.prisma.user.create({
-      data: {
-        astushaIdUserId: data.astushaIdUserId,
+      create: {
+        id: data.id,
         email: data.email,
-        login: `astusha_${data.astushaIdUserId}`,
+        login: `astusha_${data.id}`,
         passwordHash: 'managed-by-astusha-id',
       },
     });

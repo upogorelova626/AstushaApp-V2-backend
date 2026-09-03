@@ -44,13 +44,12 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const localUser = await this.usersService.findOrCreateByAstushaIdUser({
-      astushaIdUserId: payload.sub,
+      id: payload.sub,
       email: payload.email,
     });
 
     request.user = {
       id: localUser.id,
-      astushaIdUserId: payload.sub,
       email: payload.email,
     };
 

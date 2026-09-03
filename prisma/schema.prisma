@@ -77,7 +77,6 @@ enum AiMessageRole {
 
 model User {
   id           String @id @default(uuid())
-   astushaIdUserId String? @unique
 
   login        String @unique
   email        String @unique
